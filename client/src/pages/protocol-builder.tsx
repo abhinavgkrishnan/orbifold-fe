@@ -17,6 +17,8 @@ export default function ProtocolBuilder() {
     selectedConnection,
     isConnecting,
     connectingFrom,
+    canUndo,
+    canRedo,
     addBlock,
     updateBlock,
     removeBlock,
@@ -27,7 +29,9 @@ export default function ProtocolBuilder() {
     cancelConnection,
     removeConnection,
     getProtocolData,
-    clearCanvas
+    clearCanvas,
+    undo,
+    redo
   } = useProtocolBuilder();
 
   const handleSelectBlock = (block: BlockType | null) => {
@@ -49,6 +53,8 @@ export default function ProtocolBuilder() {
         selectedConnection={selectedConnection}
         isConnecting={isConnecting}
         connectingFrom={connectingFrom}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onAddBlock={addBlock}
         onSelectBlock={handleSelectBlock}
         onSelectConnection={selectConnection}
@@ -58,6 +64,8 @@ export default function ProtocolBuilder() {
         onConnectionComplete={completeConnection}
         onCancelConnection={cancelConnection}
         onRemoveConnection={removeConnection}
+        onUndo={undo}
+        onRedo={redo}
       />
       
       {showProperties && (

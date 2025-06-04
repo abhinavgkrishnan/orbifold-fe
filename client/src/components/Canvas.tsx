@@ -12,6 +12,8 @@ interface CanvasProps {
   selectedConnection: string | null;
   isConnecting: boolean;
   connectingFrom: { blockId: string; point: string } | null;
+  canUndo: boolean;
+  canRedo: boolean;
   onAddBlock: (blockData: { type: string; name: string }, position: { x: number; y: number }) => void;
   onSelectBlock: (block: BlockType | null) => void;
   onSelectConnection: (connectionId: string | null) => void;
@@ -21,6 +23,8 @@ interface CanvasProps {
   onConnectionComplete: (blockId: string, point: string) => void;
   onCancelConnection: () => void;
   onRemoveConnection: (connectionId: string) => void;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 export function Canvas({
@@ -30,6 +34,8 @@ export function Canvas({
   selectedConnection,
   isConnecting,
   connectingFrom,
+  canUndo,
+  canRedo,
   onAddBlock,
   onSelectBlock,
   onSelectConnection,
@@ -38,10 +44,21 @@ export function Canvas({
   onConnectionStart,
   onConnectionComplete,
   onCancelConnection,
-  onRemoveConnection
+  onRemoveConnection,
+  onUndo,
+  onRedo
 }: CanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(100);
+
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(prev + 25, 200));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(prev - 25, 50));
+  };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -94,20 +111,90 @@ export function Canvas({
     
     if (!sourceBlock || !targetBlock) return '';
     
-    // Calculate actual connection point positions
-    const sourceX = sourceBlock.position.x + 120; // Right edge of source block
-    const sourceY = sourceBlock.position.y + 25; // Center height
-    const targetX = targetBlock.position.x; // Left edge of target block  
-    const targetY = targetBlock.position.y + 25; // Center height
+    // Calculate exact connection dot centers
+    // Dots are positioned with -left-3 and -right-3 (which is -12px and right: -12px)
+    // Dot is 16px wide (w-4), so center is at 8px from its left edge
+    let sourceX, sourceY, targetX, targetY;
     
-    // Create a smooth curve
+    // Source point (where connection starts)
+    if (connection.sourcePoint === 'output') {
+      // Output dots are on the right side: block.x + 120px (block width) + 12px (right: -12px) + 8px (dot center)
+      sourceX = sourceBlock.position.x + 120 + 4; // Right edge + 4px to dot center  
+      sourceY = sourceBlock.position.y + 25; // Block center height
+    } else {
+      // Input dots are on the left side: block.x - 12px (left: -12px) + 8px (dot center)  
+      sourceX = sourceBlock.position.x - 4; // Left edge - 4px to dot center
+      sourceY = sourceBlock.position.y + 25; // Block center height
+    }
+    
+    // Target point (where connection ends)
+    if (connection.targetPoint === 'input') {
+      // Input dots are on the left side
+      targetX = targetBlock.position.x - 4; // Left edge - 4px to dot center
+      targetY = targetBlock.position.y + 25; // Block center height
+    } else {
+      // Output dots are on the right side
+      targetX = targetBlock.position.x + 120 + 4; // Right edge + 4px to dot center
+      targetY = targetBlock.position.y + 25; // Block center height
+    }
+    
+    // Create 90-degree path
     const dx = targetX - sourceX;
-    const controlX1 = sourceX + Math.min(dx * 0.5, 100);
-    const controlY1 = sourceY;
-    const controlX2 = targetX - Math.min(dx * 0.5, 100);
-    const controlY2 = targetY;
+    const midX = sourceX + dx / 2;
     
-    return `M ${sourceX} ${sourceY} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${targetX} ${targetY}`;
+    // Create path with right angles
+    let path;
+    if (Math.abs(dx) > 60) {
+      // Standard horizontal then vertical path
+      path = `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}`;
+    } else {
+      // If blocks are close vertically, use vertical then horizontal
+      const midY = sourceY + (targetY - sourceY) / 2;
+      path = `M ${sourceX} ${sourceY} L ${sourceX + 30} ${sourceY} L ${sourceX + 30} ${midY} L ${targetX - 30} ${midY} L ${targetX - 30} ${targetY} L ${targetX} ${targetY}`;
+    }
+    
+    return path;
+  };
+
+  const getConnectionMidpoint = (connection: Connection) => {
+    const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
+    const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
+    
+    if (!sourceBlock || !targetBlock) return { x: 0, y: 0 };
+    
+    // Use same logic as getConnectionPath for consistency
+    let sourceX, sourceY, targetX, targetY;
+    
+    // Source point
+    if (connection.sourcePoint === 'output') {
+      sourceX = sourceBlock.position.x + 120 + 4;
+      sourceY = sourceBlock.position.y + 25;
+    } else {
+      sourceX = sourceBlock.position.x - 4;
+      sourceY = sourceBlock.position.y + 25;
+    }
+    
+    // Target point
+    if (connection.targetPoint === 'input') {
+      targetX = targetBlock.position.x - 4;
+      targetY = targetBlock.position.y + 25;
+    } else {
+      targetX = targetBlock.position.x + 120 + 4;
+      targetY = targetBlock.position.y + 25;
+    }
+    
+    // Calculate midpoint for delete button placement
+    const dx = targetX - sourceX;
+    const midX = sourceX + dx / 2;
+    
+    if (Math.abs(dx) > 60) {
+      // For standard horizontal path, place button at the vertical segment
+      return { x: midX, y: (sourceY + targetY) / 2 };
+    } else {
+      // For complex path, place at the horizontal segment
+      const midY = sourceY + (targetY - sourceY) / 2;
+      return { x: (sourceX + 30 + targetX - 30) / 2, y: midY };
+    }
   };
 
   return (
@@ -115,21 +202,21 @@ export function Canvas({
       {/* Toolbar */}
       <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-4">
         <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="sm" disabled>
+          <Button variant="ghost" size="sm" onClick={onUndo} disabled={!canUndo}>
             <Undo className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" disabled>
+          <Button variant="ghost" size="sm" onClick={onRedo} disabled={!canRedo}>
             <Redo className="h-4 w-4" />
           </Button>
           <div className="w-px h-4 bg-gray-300 mx-2" />
-          <Button variant="ghost" size="sm" disabled>
+          <Button variant="ghost" size="sm" onClick={handleZoomIn} disabled={zoom >= 200}>
             <ZoomIn className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" disabled>
+          <Button variant="ghost" size="sm" onClick={handleZoomOut} disabled={zoom <= 50}>
             <ZoomOut className="h-4 w-4" />
           </Button>
         </div>
-        <div className="text-sm text-muted-foreground">100%</div>
+        <div className="text-sm text-muted-foreground">{zoom}%</div>
       </div>
 
       {/* Canvas */}
@@ -141,6 +228,12 @@ export function Canvas({
           onDragOver={handleDragOver}
           onClick={handleCanvasClick}
           onMouseMove={handleMouseMove}
+          style={{
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: 'top left',
+            width: `${100 / (zoom / 100)}%`,
+            height: `${100 / (zoom / 100)}%`
+          }}
         >
           {/* Connection Lines */}
           <svg className="absolute inset-0 pointer-events-none w-full h-full" style={{ zIndex: 5 }}>
@@ -159,18 +252,7 @@ export function Canvas({
             </defs>
             
             {connections.map((connection) => {
-              const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
-              const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
-              
-              if (!sourceBlock || !targetBlock) return null;
-              
-              // Calculate midpoint for delete button
-              const sourceX = sourceBlock.position.x + 120;
-              const sourceY = sourceBlock.position.y + 25;
-              const targetX = targetBlock.position.x;
-              const targetY = targetBlock.position.y + 25;
-              const midX = (sourceX + targetX) / 2;
-              const midY = (sourceY + targetY) / 2;
+              const midpoint = getConnectionMidpoint(connection);
               
               return (
                 <g key={connection.id}>
@@ -191,8 +273,8 @@ export function Canvas({
                   {selectedConnection === connection.id && (
                     <>
                       <circle
-                        cx={midX}
-                        cy={midY}
+                        cx={midpoint.x}
+                        cy={midpoint.y}
                         r="8"
                         fill="white"
                         stroke="#ef4444"
@@ -205,8 +287,8 @@ export function Canvas({
                         }}
                       />
                       <text
-                        x={midX}
-                        y={midY + 1}
+                        x={midpoint.x}
+                        y={midpoint.y + 1}
                         textAnchor="middle"
                         fontSize="10"
                         fill="#ef4444"
@@ -241,6 +323,7 @@ export function Canvas({
               block={block}
               isSelected={selectedBlock?.id === block.id}
               isConnecting={isConnecting}
+              connectingFrom={connectingFrom}
               onSelect={onSelectBlock}
               onUpdate={onUpdateBlock}
               onRemove={onRemoveBlock}

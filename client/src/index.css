@@ -131,3 +131,15 @@
   color: white;
   border: none;
 }
+
+.block-input {
+  background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+  color: white;
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+}
+
+.block-output {
+  background: linear-gradient(135deg, #EC4899 0%, #DB2777 100%);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}

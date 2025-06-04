@@ -13,17 +13,35 @@ export function ConnectionPreview({ isConnecting, connectingFrom, blocks, mouseP
   const sourceBlock = blocks.find(b => b.id === connectingFrom.blockId);
   if (!sourceBlock) return null;
 
-  const sourceX = sourceBlock.position.x + 120;
-  const sourceY = sourceBlock.position.y + 25;
+  // Use same exact logic as Canvas for connection points
+  let sourceX, sourceY;
+  
+  if (connectingFrom.point === 'output') {
+    // Output connections come from right side dot center
+    sourceX = sourceBlock.position.x + 120 + 4; // Right edge + 4px to dot center
+    sourceY = sourceBlock.position.y + 25; // Block center height
+  } else {
+    // Input connections come from left side dot center
+    sourceX = sourceBlock.position.x - 4; // Left edge - 4px to dot center
+    sourceY = sourceBlock.position.y + 25; // Block center height
+  }
+  
   const targetX = mousePosition.x;
   const targetY = mousePosition.y;
 
-  const controlX1 = sourceX + 50;
-  const controlY1 = sourceY;
-  const controlX2 = targetX - 50;
-  const controlY2 = targetY;
-
-  const path = `M ${sourceX} ${sourceY} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${targetX} ${targetY}`;
+  // Create 90-degree preview path similar to actual connections
+  const dx = targetX - sourceX;
+  const midX = sourceX + dx / 2;
+  
+  let path;
+  if (Math.abs(dx) > 60) {
+    // Standard horizontal then vertical path
+    path = `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}`;
+  } else {
+    // If close, use vertical then horizontal
+    const midY = sourceY + (targetY - sourceY) / 2;
+    path = `M ${sourceX} ${sourceY} L ${sourceX + 30} ${sourceY} L ${sourceX + 30} ${midY} L ${targetX - 30} ${midY} L ${targetX - 30} ${targetY} L ${targetX} ${targetY}`;
+  }
 
   return (
     <svg className="absolute inset-0 pointer-events-none w-full h-full" style={{ zIndex: 15 }}>

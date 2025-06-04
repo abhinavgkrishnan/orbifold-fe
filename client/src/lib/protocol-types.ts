@@ -1,6 +1,6 @@
 export interface BlockType {
   id: string;
-  type: 'zk' | 'crypto' | 'curve' | 'verification' | 'mechanism';
+  type: 'zk' | 'crypto' | 'curve' | 'verification' | 'mechanism' | 'input' | 'output';
   name: string;
   category: string;
   position: { x: number; y: number };
@@ -37,6 +37,14 @@ export const PRIMITIVE_BLOCKS = [
   { type: 'curve', name: 'BLS12-381', category: 'Elliptic Curves' },
   { type: 'curve', name: 'BN-254', category: 'Elliptic Curves' },
   { type: 'curve', name: 'BLS24-315', category: 'Elliptic Curves' },
+] as const;
+
+export const INPUT_OUTPUT_BLOCKS = [
+  // Inputs
+  { type: 'input', name: 'Input', category: 'Inputs' },
+  
+  // Outputs  
+  { type: 'output', name: 'Output', category: 'Outputs' },
 ] as const;
 
 export const VERIFICATION_BLOCKS = [
@@ -84,5 +92,15 @@ export const BLOCK_PROPERTIES = {
     security: 'Information-theoretic',
     communication: 'High',
     rounds: 'Multiple'
+  },
+  'Input': {
+    type: 'Parameter',
+    editable: true,
+    dataType: 'Any'
+  },
+  'Output': {
+    type: 'Result',
+    editable: true,
+    dataType: 'Any'
   }
 };

@@ -3,7 +3,7 @@ import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DraggableBlock } from './DraggableBlock';
-import { PRIMITIVE_BLOCKS, VERIFICATION_BLOCKS, MECHANISM_BLOCKS } from '@/lib/protocol-types';
+import { PRIMITIVE_BLOCKS, VERIFICATION_BLOCKS, MECHANISM_BLOCKS, INPUT_OUTPUT_BLOCKS } from '@/lib/protocol-types';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -55,6 +55,23 @@ export function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           
           <div className="flex-1 overflow-y-auto p-4">
             <TabsContent value="primitives" className="mt-0 space-y-6">
+              {/* Inputs/Outputs Section */}
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">
+                  Inputs & Outputs
+                </h3>
+                <div className="space-y-2">
+                  {INPUT_OUTPUT_BLOCKS.map((block) => (
+                    <DraggableBlock
+                      key={block.name}
+                      type={block.type}
+                      name={block.name}
+                      category={block.category}
+                    />
+                  ))}
+                </div>
+              </div>
+
               {/* Zero-Knowledge Section */}
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">
