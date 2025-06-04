@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Trash2, Edit2 } from 'lucide-react';
 import { BlockType } from '@/lib/protocol-types';
 import { Input } from '@/components/ui/input';
@@ -52,6 +52,30 @@ export function CanvasBlock({
     return 'rounded-full';
   };
 
+  // Simplified drag handlers
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    const deltaX = e.clientX - dragStart.x;
+    const deltaY = e.clientY - dragStart.y;
+    
+    const newPosition = {
+      x: Math.max(0, initialPosition.x + deltaX),
+      y: Math.max(0, initialPosition.y + deltaY)
+    };
+    
+    onUpdate(block.id, { position: newPosition });
+  }, [isDragging, dragStart, initialPosition, block.id, onUpdate]);
+
+  const handleMouseUp = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+      // Remove global listeners
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    }
+  }, [isDragging, handleMouseMove]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     
@@ -74,26 +98,6 @@ export function CanvasBlock({
     // Add global listeners
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging) return;
-    
-    const deltaX = e.clientX - dragStart.x;
-    const deltaY = e.clientY - dragStart.y;
-    
-    const newPosition = {
-      x: Math.max(0, initialPosition.x + deltaX),
-      y: Math.max(0, initialPosition.y + deltaY)
-    };
-    
-    onUpdate(block.id, { position: newPosition });
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
   };
 
   const handleConnectionPointClick = (point: string, e: React.MouseEvent) => {

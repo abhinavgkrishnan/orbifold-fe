@@ -51,6 +51,7 @@ export function Canvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(100);
+  const [hoveredConnection, setHoveredConnection] = useState<string | null>(null);
 
   const handleZoomIn = () => {
     setZoom(prev => Math.min(prev + 25, 200));
@@ -58,6 +59,49 @@ export function Canvas({
 
   const handleZoomOut = () => {
     setZoom(prev => Math.max(prev - 25, 50));
+  };
+
+  // Check if two blocks overlap
+  const blocksOverlap = (pos1: { x: number; y: number }, pos2: { x: number; y: number }) => {
+    const blockWidth = 120;
+    const blockHeight = 50;
+    const padding = 10; // Extra space between blocks
+    
+    return !(pos1.x + blockWidth + padding <= pos2.x || 
+             pos2.x + blockWidth + padding <= pos1.x || 
+             pos1.y + blockHeight + padding <= pos2.y || 
+             pos2.y + blockHeight + padding <= pos1.y);
+  };
+
+  // Find nearest non-overlapping position
+  const findNearestEmptyPosition = (targetPos: { x: number; y: number }) => {
+    const blockWidth = 120;
+    const blockHeight = 50;
+    const gridSize = 20;
+    
+    // Check if position is already free
+    const hasOverlap = blocks.some(block => blocksOverlap(targetPos, block.position));
+    if (!hasOverlap) return targetPos;
+
+    // Try positions in expanding spiral pattern
+    for (let radius = gridSize; radius <= 300; radius += gridSize) {
+      for (let angle = 0; angle < 360; angle += 45) {
+        const radian = (angle * Math.PI) / 180;
+        const testPos = {
+          x: Math.max(0, targetPos.x + Math.cos(radian) * radius),
+          y: Math.max(0, targetPos.y + Math.sin(radian) * radius)
+        };
+        
+        const hasOverlap = blocks.some(block => blocksOverlap(testPos, block.position));
+        if (!hasOverlap) {
+          return testPos;
+        }
+      }
+    }
+    
+    // Fallback: place to the right of all blocks
+    const maxX = blocks.reduce((max, block) => Math.max(max, block.position.x + blockWidth), 0);
+    return { x: maxX + 30, y: targetPos.y };
   };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -68,16 +112,19 @@ export function Canvas({
       const rect = canvasRef.current?.getBoundingClientRect();
       
       if (rect && blockData) {
-        const position = {
-          x: e.clientX - rect.left - 75, // Center the block
-          y: e.clientY - rect.top - 20
+        const targetPosition = {
+          x: e.clientX - rect.left - 60, // Center the block
+          y: e.clientY - rect.top - 25
         };
-        onAddBlock(blockData, position);
+        
+        // Find non-overlapping position
+        const finalPosition = findNearestEmptyPosition(targetPosition);
+        onAddBlock(blockData, finalPosition);
       }
     } catch (error) {
       console.error('Failed to parse dropped data:', error);
     }
-  }, [onAddBlock]);
+  }, [onAddBlock, blocks]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -105,67 +152,16 @@ export function Canvas({
     }
   }, [isConnecting]);
 
+  // Improved connection path that avoids blocks
   const getConnectionPath = (connection: Connection) => {
     const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
     const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
     
     if (!sourceBlock || !targetBlock) return '';
     
-    // Calculate exact connection dot centers
-    // Dots are positioned with -left-3 and -right-3 (which is -12px and right: -12px)
-    // Dot is 16px wide (w-4), so center is at 8px from its left edge
     let sourceX, sourceY, targetX, targetY;
     
     // Source point (where connection starts)
-    if (connection.sourcePoint === 'output') {
-      // Output dots are on the right side: block.x + 120px (block width) + 12px (right: -12px) + 8px (dot center)
-      sourceX = sourceBlock.position.x + 120 + 4; // Right edge + 4px to dot center  
-      sourceY = sourceBlock.position.y + 25; // Block center height
-    } else {
-      // Input dots are on the left side: block.x - 12px (left: -12px) + 8px (dot center)  
-      sourceX = sourceBlock.position.x - 4; // Left edge - 4px to dot center
-      sourceY = sourceBlock.position.y + 25; // Block center height
-    }
-    
-    // Target point (where connection ends)
-    if (connection.targetPoint === 'input') {
-      // Input dots are on the left side
-      targetX = targetBlock.position.x - 4; // Left edge - 4px to dot center
-      targetY = targetBlock.position.y + 25; // Block center height
-    } else {
-      // Output dots are on the right side
-      targetX = targetBlock.position.x + 120 + 4; // Right edge + 4px to dot center
-      targetY = targetBlock.position.y + 25; // Block center height
-    }
-    
-    // Create 90-degree path
-    const dx = targetX - sourceX;
-    const midX = sourceX + dx / 2;
-    
-    // Create path with right angles
-    let path;
-    if (Math.abs(dx) > 60) {
-      // Standard horizontal then vertical path
-      path = `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}`;
-    } else {
-      // If blocks are close vertically, use vertical then horizontal
-      const midY = sourceY + (targetY - sourceY) / 2;
-      path = `M ${sourceX} ${sourceY} L ${sourceX + 30} ${sourceY} L ${sourceX + 30} ${midY} L ${targetX - 30} ${midY} L ${targetX - 30} ${targetY} L ${targetX} ${targetY}`;
-    }
-    
-    return path;
-  };
-
-  const getConnectionMidpoint = (connection: Connection) => {
-    const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
-    const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
-    
-    if (!sourceBlock || !targetBlock) return { x: 0, y: 0 };
-    
-    // Use same logic as getConnectionPath for consistency
-    let sourceX, sourceY, targetX, targetY;
-    
-    // Source point
     if (connection.sourcePoint === 'output') {
       sourceX = sourceBlock.position.x + 120 + 4;
       sourceY = sourceBlock.position.y + 25;
@@ -174,7 +170,7 @@ export function Canvas({
       sourceY = sourceBlock.position.y + 25;
     }
     
-    // Target point
+    // Target point (where connection ends)
     if (connection.targetPoint === 'input') {
       targetX = targetBlock.position.x - 4;
       targetY = targetBlock.position.y + 25;
@@ -183,17 +179,58 @@ export function Canvas({
       targetY = targetBlock.position.y + 25;
     }
     
-    // Calculate midpoint for delete button placement
+    // Create path that routes around blocks
     const dx = targetX - sourceX;
-    const midX = sourceX + dx / 2;
+    const dy = targetY - sourceY;
     
-    if (Math.abs(dx) > 60) {
-      // For standard horizontal path, place button at the vertical segment
+    // If blocks are far apart horizontally, use simple path
+    if (Math.abs(dx) > 150) {
+      const midX = sourceX + dx / 2;
+      return `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}`;
+    }
+    
+    // For closer blocks, route above or below to avoid overlap
+    const routeAbove = sourceY > targetY;
+    const verticalOffset = routeAbove ? -60 : 60;
+    const routeY = Math.min(sourceY, targetY) + verticalOffset;
+    
+    return `M ${sourceX} ${sourceY} L ${sourceX + 30} ${sourceY} L ${sourceX + 30} ${routeY} L ${targetX - 30} ${routeY} L ${targetX - 30} ${targetY} L ${targetX} ${targetY}`;
+  };
+
+  const getConnectionMidpoint = (connection: Connection) => {
+    const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
+    const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
+    
+    if (!sourceBlock || !targetBlock) return { x: 0, y: 0 };
+    
+    let sourceX, sourceY, targetX, targetY;
+    
+    if (connection.sourcePoint === 'output') {
+      sourceX = sourceBlock.position.x + 120 + 4;
+      sourceY = sourceBlock.position.y + 25;
+    } else {
+      sourceX = sourceBlock.position.x - 4;
+      sourceY = sourceBlock.position.y + 25;
+    }
+    
+    if (connection.targetPoint === 'input') {
+      targetX = targetBlock.position.x - 4;
+      targetY = targetBlock.position.y + 25;
+    } else {
+      targetX = targetBlock.position.x + 120 + 4;
+      targetY = targetBlock.position.y + 25;
+    }
+    
+    // Calculate midpoint based on the path type
+    const dx = targetX - sourceX;
+    if (Math.abs(dx) > 150) {
+      const midX = sourceX + dx / 2;
       return { x: midX, y: (sourceY + targetY) / 2 };
     } else {
-      // For complex path, place at the horizontal segment
-      const midY = sourceY + (targetY - sourceY) / 2;
-      return { x: (sourceX + 30 + targetX - 30) / 2, y: midY };
+      const routeAbove = sourceY > targetY;
+      const verticalOffset = routeAbove ? -60 : 60;
+      const routeY = Math.min(sourceY, targetY) + verticalOffset;
+      return { x: (sourceX + 30 + targetX - 30) / 2, y: routeY };
     }
   };
 
@@ -253,6 +290,8 @@ export function Canvas({
             
             {connections.map((connection) => {
               const midpoint = getConnectionMidpoint(connection);
+              const isHovered = hoveredConnection === connection.id;
+              const isSelected = selectedConnection === connection.id;
               
               return (
                 <g key={connection.id}>
@@ -264,13 +303,15 @@ export function Canvas({
                     stroke="#14B8A6"
                     fill="none"
                     style={{ pointerEvents: 'all' }}
+                    onMouseEnter={() => setHoveredConnection(connection.id)}
+                    onMouseLeave={() => setHoveredConnection(null)}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectConnection(connection.id);
                     }}
                   />
-                  {/* Delete button - only show when connection is selected */}
-                  {selectedConnection === connection.id && (
+                  {/* Delete button - show on hover or selection */}
+                  {(isHovered || isSelected) && (
                     <>
                       <circle
                         cx={midpoint.x}
