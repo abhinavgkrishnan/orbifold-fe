@@ -60,13 +60,25 @@
 
 /* Custom styles for drag and drop */
 .dragging {
-  opacity: 0.8;
-  transform: scale(1.02);
+  transform: scale(1.05) !important;
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.25)) !important;
+  z-index: 1000 !important;
+  cursor: grabbing !important;
+  opacity: 0.95;
 }
 
 .drop-zone {
   background-color: rgba(20, 184, 166, 0.1);
   border: 2px dashed #14B8A6;
+}
+
+/* Improve drag feedback */
+.cursor-grabbing {
+  cursor: grabbing !important;
+}
+
+.cursor-grab {
+  cursor: grab !important;
 }
 
 /* Remove outline on drag */
@@ -87,12 +99,73 @@
 
 .connection-point {
   cursor: crosshair;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  width: 12px !important;
+  height: 12px !important;
+  border-width: 2px !important;
+  box-shadow: 0 0 0 0 transparent;
 }
 
 .connection-point:hover {
-  transform: scale(1.2);
-  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.3);
+  transform: scale(1.4);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.4);
+  border-width: 2px !important;
+  border-color: #14B8A6 !important;
+  z-index: 100;
+}
+
+/* Stable hover states for connection elements */
+.connection-hover-area {
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.connection-delete-button {
+  pointer-events: all;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.connection-delete-button:hover {
+  transform: scale(1.1);
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
+/* Improve block drag responsiveness */
+.canvas-block {
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+  will-change: transform;
+}
+
+.canvas-block:hover {
+  transform: translateZ(0); /* Enable hardware acceleration */
+}
+
+.canvas-block.dragging {
+  transform: scale(1.05);
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.2));
+  z-index: 1000;
+  cursor: grabbing !important;
+}
+
+/* Ensure immediate cursor feedback */
+.canvas-block:active {
+  cursor: grabbing !important;
+}
+
+/* Improve drag visual states */
+.canvas-block .block-content {
+  pointer-events: none; /* Prevent text selection during drag */
+  user-select: none;
+}
+
+/* Smooth transitions for block states */
+.canvas-block {
+  transition: all 0.1s ease-out;
+}
+
+.canvas-block:hover {
+  transform: scale(1.02);
 }
 
 .canvas-grid {

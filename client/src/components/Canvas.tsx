@@ -52,6 +52,8 @@ export function Canvas({
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(100);
   const [hoveredConnection, setHoveredConnection] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleZoomIn = () => {
     setZoom(prev => Math.min(prev + 25, 200));
@@ -65,7 +67,7 @@ export function Canvas({
   const blocksOverlap = (pos1: { x: number; y: number }, pos2: { x: number; y: number }) => {
     const blockWidth = 120;
     const blockHeight = 50;
-    const padding = 10; // Extra space between blocks
+    const padding = 10;
     
     return !(pos1.x + blockWidth + padding <= pos2.x || 
              pos2.x + blockWidth + padding <= pos1.x || 
@@ -79,11 +81,9 @@ export function Canvas({
     const blockHeight = 50;
     const gridSize = 20;
     
-    // Check if position is already free
     const hasOverlap = blocks.some(block => blocksOverlap(targetPos, block.position));
     if (!hasOverlap) return targetPos;
 
-    // Try positions in expanding spiral pattern
     for (let radius = gridSize; radius <= 300; radius += gridSize) {
       for (let angle = 0; angle < 360; angle += 45) {
         const radian = (angle * Math.PI) / 180;
@@ -99,38 +99,54 @@ export function Canvas({
       }
     }
     
-    // Fallback: place to the right of all blocks
     const maxX = blocks.reduce((max, block) => Math.max(max, block.position.x + blockWidth), 0);
     return { x: maxX + 30, y: targetPos.y };
   };
 
+  // Handle drag and drop from sidebar only
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragOver(false);
     
     try {
-      const blockData = JSON.parse(e.dataTransfer.getData('application/json'));
+      let blockDataStr = e.dataTransfer.getData('application/json');
+      if (!blockDataStr) {
+        blockDataStr = e.dataTransfer.getData('text/plain');
+      }
+      if (!blockDataStr) {
+        blockDataStr = e.dataTransfer.getData('application/x-orbifold-block');
+      }
+      
+      const blockData = JSON.parse(blockDataStr);
       const rect = canvasRef.current?.getBoundingClientRect();
       
       if (rect && blockData) {
         const targetPosition = {
-          x: e.clientX - rect.left - 60, // Center the block
-          y: e.clientY - rect.top - 25
+          x: (e.clientX - rect.left) / (zoom / 100) - 60,
+          y: (e.clientY - rect.top) / (zoom / 100) - 25
         };
         
-        // Find non-overlapping position
         const finalPosition = findNearestEmptyPosition(targetPosition);
         onAddBlock(blockData, finalPosition);
       }
     } catch (error) {
       console.error('Failed to parse dropped data:', error);
     }
-  }, [onAddBlock, blocks]);
+  }, [onAddBlock, blocks, zoom]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
+    setIsDragOver(true);
   }, []);
 
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!canvasRef.current?.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  // Simple canvas click handler - no block creation
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       if (isConnecting) {
@@ -143,96 +159,198 @@ export function Canvas({
   }, [isConnecting, onCancelConnection, onSelectBlock, onSelectConnection]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isConnecting && canvasRef.current) {
+    if (canvasRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
       setMousePosition({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+        x: (e.clientX - rect.left) / (zoom / 100),
+        y: (e.clientY - rect.top) / (zoom / 100)
       });
     }
-  }, [isConnecting]);
+  }, [zoom]);
 
-  // Improved connection path that avoids blocks
+  // Precise connection point positioning - exactly at block edges
+  const getConnectionPointPosition = (block: BlockType, point: string) => {
+    const { x, y } = block.position;
+    const blockWidth = 120;
+    const blockHeight = 50;
+    
+    switch (point) {
+      case 'left':
+        return { x: x, y: y + blockHeight / 2 };
+      case 'right':
+        return { x: x + blockWidth, y: y + blockHeight / 2 };
+      case 'top':
+        return { x: x + blockWidth / 2, y: y };
+      case 'bottom':
+        return { x: x + blockWidth / 2, y: y + blockHeight };
+      default:
+        // Fallback for legacy connections
+        return point === 'output' 
+          ? { x: x + blockWidth, y: y + blockHeight / 2 }
+          : { x: x, y: y + blockHeight / 2 };
+    }
+  };
+
+  // Enhanced connection path with consistent right-angle turns at both ends
   const getConnectionPath = (connection: Connection) => {
     const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
     const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
     
     if (!sourceBlock || !targetBlock) return '';
     
-    let sourceX, sourceY, targetX, targetY;
+    const sourcePos = getConnectionPointPosition(sourceBlock, connection.sourcePoint);
+    const targetPos = getConnectionPointPosition(targetBlock, connection.targetPoint);
     
-    // Source point (where connection starts)
-    if (connection.sourcePoint === 'output') {
-      sourceX = sourceBlock.position.x + 120 + 4;
-      sourceY = sourceBlock.position.y + 25;
+    const dx = targetPos.x - sourcePos.x;
+    const dy = targetPos.y - sourcePos.y;
+    
+    // Create path with right-angle turns at both ends for visual clarity
+    const sourceOffset = 40; // Distance for source-side turn
+    const targetOffset = 40; // Distance for target-side turn
+    
+    // Calculate intermediate points based on connection directions
+    let sourceExtend, targetExtend;
+    
+    // Determine source extension point
+    switch (connection.sourcePoint) {
+      case 'right':
+        sourceExtend = { x: sourcePos.x + sourceOffset, y: sourcePos.y };
+        break;
+      case 'left':
+        sourceExtend = { x: sourcePos.x - sourceOffset, y: sourcePos.y };
+        break;
+      case 'bottom':
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y + sourceOffset };
+        break;
+      case 'top':
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y - sourceOffset };
+        break;
+      default:
+        sourceExtend = sourcePos;
+    }
+    
+    // Determine target approach point
+    switch (connection.targetPoint) {
+      case 'left':
+        targetExtend = { x: targetPos.x - targetOffset, y: targetPos.y };
+        break;
+      case 'right':
+        targetExtend = { x: targetPos.x + targetOffset, y: targetPos.y };
+        break;
+      case 'top':
+        targetExtend = { x: targetPos.x, y: targetPos.y - targetOffset };
+        break;
+      case 'bottom':
+        targetExtend = { x: targetPos.x, y: targetPos.y + targetOffset };
+        break;
+      default:
+        targetExtend = targetPos;
+    }
+    
+    // Create the path with proper routing
+    const midX = (sourceExtend.x + targetExtend.x) / 2;
+    const midY = (sourceExtend.y + targetExtend.y) / 2;
+    
+    // Determine routing style based on connection orientation
+    const isHorizontalPrimary = Math.abs(dx) > Math.abs(dy);
+    
+    if (isHorizontalPrimary) {
+      // Horizontal-primary routing
+      return `M ${sourcePos.x} ${sourcePos.y} L ${sourceExtend.x} ${sourceExtend.y} L ${sourceExtend.x} ${targetExtend.y} L ${targetExtend.x} ${targetExtend.y} L ${targetPos.x} ${targetPos.y}`;
     } else {
-      sourceX = sourceBlock.position.x - 4;
-      sourceY = sourceBlock.position.y + 25;
+      // Vertical-primary routing
+      return `M ${sourcePos.x} ${sourcePos.y} L ${sourceExtend.x} ${sourceExtend.y} L ${targetExtend.x} ${sourceExtend.y} L ${targetExtend.x} ${targetExtend.y} L ${targetPos.x} ${targetPos.y}`;
     }
-    
-    // Target point (where connection ends)
-    if (connection.targetPoint === 'input') {
-      targetX = targetBlock.position.x - 4;
-      targetY = targetBlock.position.y + 25;
-    } else {
-      targetX = targetBlock.position.x + 120 + 4;
-      targetY = targetBlock.position.y + 25;
-    }
-    
-    // Create path that routes around blocks
-    const dx = targetX - sourceX;
-    const dy = targetY - sourceY;
-    
-    // If blocks are far apart horizontally, use simple path
-    if (Math.abs(dx) > 150) {
-      const midX = sourceX + dx / 2;
-      return `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}`;
-    }
-    
-    // For closer blocks, route above or below to avoid overlap
-    const routeAbove = sourceY > targetY;
-    const verticalOffset = routeAbove ? -60 : 60;
-    const routeY = Math.min(sourceY, targetY) + verticalOffset;
-    
-    return `M ${sourceX} ${sourceY} L ${sourceX + 30} ${sourceY} L ${sourceX + 30} ${routeY} L ${targetX - 30} ${routeY} L ${targetX - 30} ${targetY} L ${targetX} ${targetY}`;
   };
 
+  // Improved midpoint calculation for stable delete button positioning
   const getConnectionMidpoint = (connection: Connection) => {
     const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
     const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
     
     if (!sourceBlock || !targetBlock) return { x: 0, y: 0 };
     
-    let sourceX, sourceY, targetX, targetY;
+    const sourcePos = getConnectionPointPosition(sourceBlock, connection.sourcePoint);
+    const targetPos = getConnectionPointPosition(targetBlock, connection.targetPoint);
     
-    if (connection.sourcePoint === 'output') {
-      sourceX = sourceBlock.position.x + 120 + 4;
-      sourceY = sourceBlock.position.y + 25;
-    } else {
-      sourceX = sourceBlock.position.x - 4;
-      sourceY = sourceBlock.position.y + 25;
+    // Calculate the actual midpoint along the path, not just straight-line midpoint
+    const dx = targetPos.x - sourcePos.x;
+    const dy = targetPos.y - sourcePos.y;
+    const sourceOffset = 40;
+    const targetOffset = 40;
+    
+    // Get the middle segment of the path for better delete button positioning
+    let sourceExtend, targetExtend;
+    
+    switch (connection.sourcePoint) {
+      case 'right':
+        sourceExtend = { x: sourcePos.x + sourceOffset, y: sourcePos.y };
+        break;
+      case 'left':
+        sourceExtend = { x: sourcePos.x - sourceOffset, y: sourcePos.y };
+        break;
+      case 'bottom':
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y + sourceOffset };
+        break;
+      case 'top':
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y - sourceOffset };
+        break;
+      default:
+        sourceExtend = sourcePos;
     }
     
-    if (connection.targetPoint === 'input') {
-      targetX = targetBlock.position.x - 4;
-      targetY = targetBlock.position.y + 25;
-    } else {
-      targetX = targetBlock.position.x + 120 + 4;
-      targetY = targetBlock.position.y + 25;
+    switch (connection.targetPoint) {
+      case 'left':
+        targetExtend = { x: targetPos.x - targetOffset, y: targetPos.y };
+        break;
+      case 'right':
+        targetExtend = { x: targetPos.x + targetOffset, y: targetPos.y };
+        break;
+      case 'top':
+        targetExtend = { x: targetPos.x, y: targetPos.y - targetOffset };
+        break;
+      case 'bottom':
+        targetExtend = { x: targetPos.x, y: targetPos.y + targetOffset };
+        break;
+      default:
+        targetExtend = targetPos;
     }
     
-    // Calculate midpoint based on the path type
-    const dx = targetX - sourceX;
-    if (Math.abs(dx) > 150) {
-      const midX = sourceX + dx / 2;
-      return { x: midX, y: (sourceY + targetY) / 2 };
-    } else {
-      const routeAbove = sourceY > targetY;
-      const verticalOffset = routeAbove ? -60 : 60;
-      const routeY = Math.min(sourceY, targetY) + verticalOffset;
-      return { x: (sourceX + 30 + targetX - 30) / 2, y: routeY };
-    }
+    // Return the midpoint of the main connection segment
+    return {
+      x: (sourceExtend.x + targetExtend.x) / 2,
+      y: (sourceExtend.y + targetExtend.y) / 2
+    };
   };
+
+  // Stable hover handling with proper debouncing
+  const handleConnectionMouseEnter = useCallback((connectionId: string) => {
+    // Clear any existing timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setHoveredConnection(connectionId);
+  }, []);
+
+  const handleConnectionMouseLeave = useCallback(() => {
+    // Clear any existing timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    
+    // Set a short delay before hiding to prevent flickering
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredConnection(null);
+    }, 100);
+  }, []);
+
+  // Keep delete button visible when hovering over it
+  const handleDeleteButtonMouseEnter = useCallback((connectionId: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setHoveredConnection(connectionId);
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -260,9 +378,12 @@ export function Canvas({
       <div className="flex-1 relative overflow-hidden">
         <div
           ref={canvasRef}
-          className="canvas-container w-full h-full bg-gray-50 canvas-grid relative"
+          className={`canvas-container w-full h-full bg-gray-50 canvas-grid relative transition-all duration-200 ${
+            isDragOver ? 'bg-teal-50 border-2 border-dashed border-teal-400' : ''
+          }`}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
           onClick={handleCanvasClick}
           onMouseMove={handleMouseMove}
           style={{
@@ -273,18 +394,18 @@ export function Canvas({
           }}
         >
           {/* Connection Lines */}
-          <svg className="absolute inset-0 pointer-events-none w-full h-full" style={{ zIndex: 5 }}>
+          <svg className="absolute inset-0 w-full h-full" style={{ zIndex: 5, pointerEvents: 'none' }}>
             <defs>
               <marker
                 id="arrowhead"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerWidth="10"
+                markerHeight="8"
+                refX="9"
+                refY="4"
                 orient="auto"
                 markerUnits="strokeWidth"
               >
-                <path d="M0,0 L0,6 L8,3 z" fill="#14B8A6" />
+                <path d="M0,0 L0,8 L10,4 z" fill="#14B8A6" />
               </marker>
             </defs>
             
@@ -295,54 +416,79 @@ export function Canvas({
               
               return (
                 <g key={connection.id}>
+                  {/* Extra wide invisible path for stable hover detection */}
                   <path
                     d={getConnectionPath(connection)}
-                    className="connection-line cursor-pointer"
-                    markerEnd="url(#arrowhead)"
-                    strokeWidth="2"
-                    stroke="#14B8A6"
+                    stroke="transparent"
+                    strokeWidth="20"
                     fill="none"
-                    style={{ pointerEvents: 'all' }}
-                    onMouseEnter={() => setHoveredConnection(connection.id)}
-                    onMouseLeave={() => setHoveredConnection(null)}
+                    style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                    onMouseEnter={() => handleConnectionMouseEnter(connection.id)}
+                    onMouseLeave={handleConnectionMouseLeave}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectConnection(connection.id);
                     }}
                   />
-                  {/* Delete button - show on hover or selection */}
-                  {(isHovered || isSelected) && (
-                    <>
+                  {/* Visible connection line */}
+                  <path
+                    d={getConnectionPath(connection)}
+                    stroke="#14B8A6"
+                    strokeWidth="2"
+                    fill="none"
+                    markerEnd="url(#arrowhead)"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  
+                  {/* Delete button with stable positioning */}
+                  {isHovered && (
+                    <g>
+                      {/* Larger invisible circle for stable hover */}
                       <circle
                         cx={midpoint.x}
                         cy={midpoint.y}
-                        r="8"
+                        r="20"
+                        fill="transparent"
+                        style={{ pointerEvents: 'all' }}
+                        onMouseEnter={() => handleDeleteButtonMouseEnter(connection.id)}
+                        onMouseLeave={handleConnectionMouseLeave}
+                      />
+                      {/* Visible delete button */}
+                      <circle
+                        cx={midpoint.x}
+                        cy={midpoint.y}
+                        r="12"
                         fill="white"
                         stroke="#ef4444"
-                        strokeWidth="1"
+                        strokeWidth="2"
                         className="cursor-pointer hover:fill-red-50"
                         style={{ pointerEvents: 'all' }}
+                        onMouseEnter={() => handleDeleteButtonMouseEnter(connection.id)}
                         onClick={(e) => {
                           e.stopPropagation();
                           onRemoveConnection(connection.id);
+                          setHoveredConnection(null);
                         }}
                       />
                       <text
                         x={midpoint.x}
-                        y={midpoint.y + 1}
+                        y={midpoint.y + 2}
                         textAnchor="middle"
-                        fontSize="10"
+                        fontSize="14"
+                        fontWeight="bold"
                         fill="#ef4444"
                         className="cursor-pointer select-none"
                         style={{ pointerEvents: 'all' }}
+                        onMouseEnter={() => handleDeleteButtonMouseEnter(connection.id)}
                         onClick={(e) => {
                           e.stopPropagation();
                           onRemoveConnection(connection.id);
+                          setHoveredConnection(null);
                         }}
                       >
                         ×
                       </text>
-                    </>
+                    </g>
                   )}
                 </g>
               );
@@ -374,11 +520,21 @@ export function Canvas({
           ))}
 
           {/* Drop zone indicator */}
-          {blocks.length === 0 && (
+          {blocks.length === 0 && !isDragOver && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="text-center text-muted-foreground">
-                <div className="text-lg font-medium mb-2">Drag blocks here to start building</div>
-                <div className="text-sm">Select blocks from the sidebar and drop them on the canvas</div>
+                <div className="text-lg font-medium mb-2">Drag blocks from sidebar to start building</div>
+                <div className="text-sm">Create connections by clicking connection points on blocks</div>
+              </div>
+            </div>
+          )}
+          
+          {/* Active drag indicator */}
+          {isDragOver && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center text-teal-600 bg-white/90 p-6 rounded-lg border-2 border-dashed border-teal-400 shadow-lg">
+                <div className="text-xl font-medium mb-2">Drop block here</div>
+                <div className="text-sm">Release to add the block to your protocol</div>
               </div>
             </div>
           )}

@@ -105,23 +105,21 @@ export function useProtocolBuilder() {
   }, []);
 
   const completeConnection = useCallback((targetBlockId: string, targetPoint: string) => {
-    if (!connectingFrom || connectingFrom.blockId === targetBlockId) {
+    if (!connectingFrom) {
       setIsConnecting(false);
       setConnectingFrom(null);
       return;
     }
 
-    // Simple validation: output points should connect to input points
-    if (connectingFrom.point === targetPoint) {
-      setIsConnecting(false);
-      setConnectingFrom(null);
-      return;
-    }
+    // Allow connections to the same block and from same points
+    // Remove all previous restrictions
 
-    // Check if connection already exists
+    // Check if the exact same connection already exists
     const existingConnection = connections.find(conn => 
       conn.sourceBlockId === connectingFrom.blockId && 
-      conn.targetBlockId === targetBlockId
+      conn.targetBlockId === targetBlockId &&
+      conn.sourcePoint === connectingFrom.point &&
+      conn.targetPoint === targetPoint
     );
 
     if (existingConnection) {
@@ -154,6 +152,7 @@ export function useProtocolBuilder() {
     const newConnections = connections.filter(conn => conn.id !== connectionId);
     setConnections(newConnections);
     saveToHistory(blocks, newConnections);
+    setSelectedConnection(null);
   }, [connections, blocks, saveToHistory]);
 
   const getProtocolData = useCallback((): ProtocolData => ({

@@ -27,6 +27,7 @@ export function CanvasBlock({
   onConnectionComplete
 }: CanvasBlockProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [hasMoved, setHasMoved] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(block.name);
@@ -52,12 +53,17 @@ export function CanvasBlock({
     return 'rounded-full';
   };
 
-  // Simplified drag handlers
+  // Immediate drag handlers - no click-release requirement
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isDragging) return;
     
     const deltaX = e.clientX - dragStart.x;
     const deltaY = e.clientY - dragStart.y;
+    
+    // Track that we've moved beyond a small threshold
+    if (!hasMoved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
+      setHasMoved(true);
+    }
     
     const newPosition = {
       x: Math.max(0, initialPosition.x + deltaX),
@@ -65,16 +71,24 @@ export function CanvasBlock({
     };
     
     onUpdate(block.id, { position: newPosition });
-  }, [isDragging, dragStart, initialPosition, block.id, onUpdate]);
+  }, [isDragging, hasMoved, dragStart, initialPosition, block.id, onUpdate]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e: MouseEvent) => {
     if (isDragging) {
       setIsDragging(false);
+      
+      // If we didn't move much, treat it as a click
+      if (!hasMoved) {
+        onSelect(block);
+      }
+      
+      setHasMoved(false);
+      
       // Remove global listeners
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     }
-  }, [isDragging, handleMouseMove]);
+  }, [isDragging, hasMoved, handleMouseMove, block, onSelect]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -90,12 +104,13 @@ export function CanvasBlock({
     e.preventDefault();
     e.stopPropagation();
     
-    onSelect(block);
+    // Start dragging immediately - no delays or additional clicks needed
     setIsDragging(true);
+    setHasMoved(false);
     setDragStart({ x: e.clientX, y: e.clientY });
     setInitialPosition({ x: block.position.x, y: block.position.y });
     
-    // Add global listeners
+    // Add global listeners immediately for responsive dragging
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   };
@@ -105,10 +120,7 @@ export function CanvasBlock({
     e.preventDefault();
     
     if (isConnecting) {
-      // Don't allow connecting to the same block
-      if (connectingFrom?.blockId === block.id) {
-        return;
-      }
+      // Allow connections to the same block - remove this restriction
       onConnectionComplete(block.id, point);
     } else {
       onConnectionStart(block.id, point);
@@ -116,9 +128,8 @@ export function CanvasBlock({
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if (isDragging) return;
+    // Click handling is now done in mouseUp to prevent conflicts with dragging
     e.stopPropagation();
-    onSelect(block);
   };
 
   const handleEditStart = (e: React.MouseEvent) => {
@@ -147,10 +158,35 @@ export function CanvasBlock({
     }
   };
 
+  // Connection point style helper
+  const getConnectionPointClass = (point: string) => {
+    const baseClass = 'connection-point absolute w-3 h-3 bg-white rounded-full border transform cursor-crosshair z-20';
+    const isHighlighted = isConnecting && connectingFrom?.blockId !== block.id;
+    const borderClass = isHighlighted ? 'border-primary animate-pulse border-2' : 'border-gray-300 hover:border-primary border';
+    
+    return `${baseClass} ${borderClass}`;
+  };
+
+  // Get exact connection point positioning to align with block edges
+  const getConnectionPointStyle = (point: string) => {
+    switch (point) {
+      case 'left':
+        return { left: '-6px', top: '50%', transform: 'translateY(-50%)' };
+      case 'right':
+        return { right: '-6px', top: '50%', transform: 'translateY(-50%)' };
+      case 'top':
+        return { left: '50%', top: '-6px', transform: 'translateX(-50%)' };
+      case 'bottom':
+        return { left: '50%', bottom: '-6px', transform: 'translateX(-50%)' };
+      default:
+        return {};
+    }
+  };
+
   return (
     <div
-      className={`absolute select-none ${
-        isDragging ? 'z-50 dragging' : 'z-10 transition-all duration-200'
+      className={`canvas-block absolute select-none ${
+        isDragging ? 'z-50 dragging' : 'z-10'
       } ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
       style={{
         left: block.position.x,
@@ -161,51 +197,38 @@ export function CanvasBlock({
       onMouseLeave={() => setShowControls(false)}
       onClick={handleClick}
     >
-      <div className={`${getBlockColorClass(block.type)} ${getBlockShape(block.type)} px-6 py-3 shadow-lg cursor-move relative min-w-[120px] text-center`}>
-        {/* Connection Points - only visible on hover and only for non-input/output blocks or on specific sides */}
-        {(block.type !== 'input' && block.type !== 'output') && showControls && (
+      <div className={`${getBlockColorClass(block.type)} ${getBlockShape(block.type)} px-6 py-3 shadow-lg cursor-grab hover:cursor-grab active:cursor-grabbing relative min-w-[120px] text-center`}>
+        {/* Connection Points - 4 dots: top, bottom, left, right */}
+        {showControls && (
           <>
+            {/* Left connection point */}
             <div 
-              className={`connection-point absolute -left-3 top-1/2 w-4 h-4 bg-white rounded-full border-2 transform -translate-y-1/2 cursor-crosshair z-20 ${
-                isConnecting && connectingFrom?.blockId !== block.id && connectingFrom?.point !== 'input' 
-                  ? 'border-primary animate-pulse' 
-                  : 'border-gray-300 hover:border-primary'
-              }`}
-              onClick={(e) => handleConnectionPointClick('input', e)}
+              className={getConnectionPointClass('left')}
+              style={getConnectionPointStyle('left')}
+              onClick={(e) => handleConnectionPointClick('left', e)}
             />
+            
+            {/* Right connection point */}
             <div 
-              className={`connection-point absolute -right-3 top-1/2 w-4 h-4 bg-white rounded-full border-2 transform -translate-y-1/2 cursor-crosshair z-20 ${
-                isConnecting && connectingFrom?.blockId !== block.id && connectingFrom?.point !== 'output' 
-                  ? 'border-primary animate-pulse' 
-                  : 'border-gray-300 hover:border-primary'
-              }`}
-              onClick={(e) => handleConnectionPointClick('output', e)}
+              className={getConnectionPointClass('right')}
+              style={getConnectionPointStyle('right')}
+              onClick={(e) => handleConnectionPointClick('right', e)}
+            />
+            
+            {/* Top connection point */}
+            <div 
+              className={getConnectionPointClass('top')}
+              style={getConnectionPointStyle('top')}
+              onClick={(e) => handleConnectionPointClick('top', e)}
+            />
+            
+            {/* Bottom connection point */}
+            <div 
+              className={getConnectionPointClass('bottom')}
+              style={getConnectionPointStyle('bottom')}
+              onClick={(e) => handleConnectionPointClick('bottom', e)}
             />
           </>
-        )}
-        
-        {/* Input blocks only have output connection */}
-        {block.type === 'input' && showControls && (
-          <div 
-            className={`connection-point absolute -right-3 top-1/2 w-4 h-4 bg-white rounded-full border-2 transform -translate-y-1/2 cursor-crosshair z-20 ${
-              isConnecting && connectingFrom?.blockId !== block.id && connectingFrom?.point !== 'output' 
-                ? 'border-primary animate-pulse' 
-                : 'border-gray-300 hover:border-primary'
-            }`}
-            onClick={(e) => handleConnectionPointClick('output', e)}
-          />
-        )}
-        
-        {/* Output blocks only have input connection */}
-        {block.type === 'output' && showControls && (
-          <div 
-            className={`connection-point absolute -left-3 top-1/2 w-4 h-4 bg-white rounded-full border-2 transform -translate-y-1/2 cursor-crosshair z-20 ${
-              isConnecting && connectingFrom?.blockId !== block.id && connectingFrom?.point !== 'input' 
-                ? 'border-primary animate-pulse' 
-                : 'border-gray-300 hover:border-primary'
-            }`}
-            onClick={(e) => handleConnectionPointClick('input', e)}
-          />
         )}
         
         {/* Delete Button */}
@@ -231,7 +254,7 @@ export function CanvasBlock({
           </button>
         )}
         
-        <div className="flex items-center justify-center">
+        <div className="flex items-center justify-center block-content">
           {isEditing ? (
             <Input
               value={editValue}
