@@ -191,135 +191,104 @@ export function Canvas({
     }
   };
 
-  // Enhanced connection path with consistent right-angle turns at both ends
+  // Enhanced connection path with consistent right-angle turns
   const getConnectionPath = (connection: Connection) => {
     const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
     const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
-    
     if (!sourceBlock || !targetBlock) return '';
-    
     const sourcePos = getConnectionPointPosition(sourceBlock, connection.sourcePoint);
     const targetPos = getConnectionPointPosition(targetBlock, connection.targetPoint);
-    
-    const dx = targetPos.x - sourcePos.x;
-    const dy = targetPos.y - sourcePos.y;
-    
-    // Create path with right-angle turns at both ends for visual clarity
-    const sourceOffset = 40; // Distance for source-side turn
-    const targetOffset = 40; // Distance for target-side turn
-    
-    // Calculate intermediate points based on connection directions
+    const offset = 40;
     let sourceExtend, targetExtend;
-    
-    // Determine source extension point
+    // Calculate extension from source
     switch (connection.sourcePoint) {
       case 'right':
-        sourceExtend = { x: sourcePos.x + sourceOffset, y: sourcePos.y };
+        sourceExtend = { x: sourcePos.x + offset, y: sourcePos.y };
         break;
       case 'left':
-        sourceExtend = { x: sourcePos.x - sourceOffset, y: sourcePos.y };
+        sourceExtend = { x: sourcePos.x - offset, y: sourcePos.y };
         break;
       case 'bottom':
-        sourceExtend = { x: sourcePos.x, y: sourcePos.y + sourceOffset };
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y + offset };
         break;
       case 'top':
-        sourceExtend = { x: sourcePos.x, y: sourcePos.y - sourceOffset };
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y - offset };
         break;
       default:
         sourceExtend = sourcePos;
     }
-    
-    // Determine target approach point
+    // Calculate approach to target
     switch (connection.targetPoint) {
-      case 'left':
-        targetExtend = { x: targetPos.x - targetOffset, y: targetPos.y };
-        break;
       case 'right':
-        targetExtend = { x: targetPos.x + targetOffset, y: targetPos.y };
+        targetExtend = { x: targetPos.x + offset, y: targetPos.y };
         break;
-      case 'top':
-        targetExtend = { x: targetPos.x, y: targetPos.y - targetOffset };
+      case 'left':
+        targetExtend = { x: targetPos.x - offset, y: targetPos.y };
         break;
       case 'bottom':
-        targetExtend = { x: targetPos.x, y: targetPos.y + targetOffset };
+        targetExtend = { x: targetPos.x, y: targetPos.y + offset };
+        break;
+      case 'top':
+        targetExtend = { x: targetPos.x, y: targetPos.y - offset };
         break;
       default:
         targetExtend = targetPos;
     }
-    
-    // Create the path with proper routing
-    const midX = (sourceExtend.x + targetExtend.x) / 2;
-    const midY = (sourceExtend.y + targetExtend.y) / 2;
-    
-    // Determine routing style based on connection orientation
-    const isHorizontalPrimary = Math.abs(dx) > Math.abs(dy);
-    
-    if (isHorizontalPrimary) {
-      // Horizontal-primary routing
-      return `M ${sourcePos.x} ${sourcePos.y} L ${sourceExtend.x} ${sourceExtend.y} L ${sourceExtend.x} ${targetExtend.y} L ${targetExtend.x} ${targetExtend.y} L ${targetPos.x} ${targetPos.y}`;
+    // Route: source -> sourceExtend -> targetExtend -> target
+    let path = `M ${sourcePos.x} ${sourcePos.y} L ${sourceExtend.x} ${sourceExtend.y} `;
+    if (connection.sourcePoint === 'left' || connection.sourcePoint === 'right') {
+      path += `L ${targetExtend.x} ${sourceExtend.y} L ${targetExtend.x} ${targetExtend.y} L ${targetPos.x} ${targetPos.y}`;
     } else {
-      // Vertical-primary routing
-      return `M ${sourcePos.x} ${sourcePos.y} L ${sourceExtend.x} ${sourceExtend.y} L ${targetExtend.x} ${sourceExtend.y} L ${targetExtend.x} ${targetExtend.y} L ${targetPos.x} ${targetPos.y}`;
+      path += `L ${sourceExtend.x} ${targetExtend.y} L ${targetExtend.x} ${targetExtend.y} L ${targetPos.x} ${targetPos.y}`;
     }
+    return path;
   };
 
-  // Improved midpoint calculation for stable delete button positioning
-  const getConnectionMidpoint = (connection: Connection) => {
+  // Calculate delete button position for better alignment
+  const getDeleteButtonPosition = (connection: Connection) => {
     const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
     const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
-    
     if (!sourceBlock || !targetBlock) return { x: 0, y: 0 };
-    
     const sourcePos = getConnectionPointPosition(sourceBlock, connection.sourcePoint);
     const targetPos = getConnectionPointPosition(targetBlock, connection.targetPoint);
-    
-    // Calculate the actual midpoint along the path, not just straight-line midpoint
-    const dx = targetPos.x - sourcePos.x;
-    const dy = targetPos.y - sourcePos.y;
-    const sourceOffset = 40;
-    const targetOffset = 40;
-    
-    // Get the middle segment of the path for better delete button positioning
+    const offset = 40;
     let sourceExtend, targetExtend;
-    
     switch (connection.sourcePoint) {
       case 'right':
-        sourceExtend = { x: sourcePos.x + sourceOffset, y: sourcePos.y };
+        sourceExtend = { x: sourcePos.x + offset, y: sourcePos.y };
         break;
       case 'left':
-        sourceExtend = { x: sourcePos.x - sourceOffset, y: sourcePos.y };
+        sourceExtend = { x: sourcePos.x - offset, y: sourcePos.y };
         break;
       case 'bottom':
-        sourceExtend = { x: sourcePos.x, y: sourcePos.y + sourceOffset };
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y + offset };
         break;
       case 'top':
-        sourceExtend = { x: sourcePos.x, y: sourcePos.y - sourceOffset };
+        sourceExtend = { x: sourcePos.x, y: sourcePos.y - offset };
         break;
       default:
         sourceExtend = sourcePos;
     }
-    
     switch (connection.targetPoint) {
-      case 'left':
-        targetExtend = { x: targetPos.x - targetOffset, y: targetPos.y };
-        break;
       case 'right':
-        targetExtend = { x: targetPos.x + targetOffset, y: targetPos.y };
+        targetExtend = { x: targetPos.x + offset, y: targetPos.y };
         break;
-      case 'top':
-        targetExtend = { x: targetPos.x, y: targetPos.y - targetOffset };
+      case 'left':
+        targetExtend = { x: targetPos.x - offset, y: targetPos.y };
         break;
       case 'bottom':
-        targetExtend = { x: targetPos.x, y: targetPos.y + targetOffset };
+        targetExtend = { x: targetPos.x, y: targetPos.y + offset };
+        break;
+      case 'top':
+        targetExtend = { x: targetPos.x, y: targetPos.y - offset };
         break;
       default:
         targetExtend = targetPos;
     }
-    
-    // Return the midpoint of the main connection segment
+    // The last segment is from targetExtend to targetPos
     return {
-      x: (sourceExtend.x + targetExtend.x) / 2,
-      y: (sourceExtend.y + targetExtend.y) / 2
+      x: (targetExtend.x + targetPos.x) / 2 - 8,
+      y: (targetExtend.y + targetPos.y) / 2 - 8
     };
   };
 
@@ -351,6 +320,31 @@ export function Canvas({
     }
     setHoveredConnection(connectionId);
   }, []);
+
+  // Helper to get the direction of the last segment of the path
+  const getLastSegmentDirection = (connection: Connection): 'right' | 'left' | 'up' | 'down' => {
+    const sourceBlock = blocks.find(b => b.id === connection.sourceBlockId);
+    const targetBlock = blocks.find(b => b.id === connection.targetBlockId);
+    if (!sourceBlock || !targetBlock) return 'right';
+    const sourcePos = getConnectionPointPosition(sourceBlock, connection.sourcePoint);
+    const targetPos = getConnectionPointPosition(targetBlock, connection.targetPoint);
+    const isHorizontalFirst = ['left', 'right'].includes(connection.sourcePoint);
+    let prev, end;
+    if (isHorizontalFirst) {
+      // Path: M source -> midX,sourceY -> midX,targetY -> target
+      prev = { x: targetPos.x, y: sourcePos.y };
+      end = targetPos;
+    } else {
+      // Path: M source -> sourceX,midY -> targetX,midY -> target
+      prev = { x: sourcePos.x, y: targetPos.y };
+      end = targetPos;
+    }
+    if (end.x > prev.x) return 'right';
+    if (end.x < prev.x) return 'left';
+    if (end.y > prev.y) return 'down';
+    if (end.y < prev.y) return 'up';
+    return 'right';
+  };
 
   return (
     <div className="flex-1 flex flex-col">
@@ -398,19 +392,19 @@ export function Canvas({
             <defs>
               <marker
                 id="arrowhead"
-                markerWidth="10"
+                markerWidth="8"
                 markerHeight="8"
-                refX="9"
+                refX="8"
                 refY="4"
                 orient="auto"
                 markerUnits="strokeWidth"
               >
-                <path d="M0,0 L0,8 L10,4 z" fill="#14B8A6" />
+                <path d="M0,0 L0,8 L8,4 Z" fill="#14B8A6" />
               </marker>
             </defs>
             
             {connections.map((connection) => {
-              const midpoint = getConnectionMidpoint(connection);
+              const deletePos = getDeleteButtonPosition(connection);
               const isHovered = hoveredConnection === connection.id;
               const isSelected = selectedConnection === connection.id;
               
@@ -445,8 +439,8 @@ export function Canvas({
                     <g>
                       {/* Larger invisible circle for stable hover */}
                       <circle
-                        cx={midpoint.x}
-                        cy={midpoint.y}
+                        cx={deletePos.x + 8}
+                        cy={deletePos.y + 8}
                         r="20"
                         fill="transparent"
                         style={{ pointerEvents: 'all' }}
@@ -455,8 +449,8 @@ export function Canvas({
                       />
                       {/* Visible delete button */}
                       <circle
-                        cx={midpoint.x}
-                        cy={midpoint.y}
+                        cx={deletePos.x + 8}
+                        cy={deletePos.y + 8}
                         r="12"
                         fill="white"
                         stroke="#ef4444"
@@ -471,8 +465,8 @@ export function Canvas({
                         }}
                       />
                       <text
-                        x={midpoint.x}
-                        y={midpoint.y + 2}
+                        x={deletePos.x + 8}
+                        y={deletePos.y + 8}
                         textAnchor="middle"
                         fontSize="14"
                         fontWeight="bold"

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Trash2, Edit2 } from 'lucide-react';
 import { BlockType } from '@/lib/protocol-types';
 import { Input } from '@/components/ui/input';
@@ -31,8 +31,47 @@ export function CanvasBlock({
   const [showControls, setShowControls] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(block.name);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [initialPosition, setInitialPosition] = useState({ x: 0, y: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const initialPositionRef = useRef({ x: 0, y: 0 });
+  const blockRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isDragging) {
+      const handleMouseMove = (e: MouseEvent) => {
+        const deltaX = e.clientX - dragStartRef.current.x;
+        const deltaY = e.clientY - dragStartRef.current.y;
+        
+        const newPosition = {
+          x: Math.max(0, initialPositionRef.current.x + deltaX),
+          y: Math.max(0, initialPositionRef.current.y + deltaY)
+        };
+        
+        onUpdate(block.id, { position: newPosition });
+      };
+
+      const handleMouseUp = (e: MouseEvent) => {
+        setIsDragging(false);
+        
+        // Only select if we haven't moved at all (less than 1px)
+        const deltaX = e.clientX - dragStartRef.current.x;
+        const deltaY = e.clientY - dragStartRef.current.y;
+        if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+          onSelect(block);
+        }
+        
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, block, onSelect, onUpdate]);
 
   const getBlockColorClass = (blockType: string) => {
     switch (blockType) {
@@ -53,43 +92,6 @@ export function CanvasBlock({
     return 'rounded-full';
   };
 
-  // Immediate drag handlers - no click-release requirement
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging) return;
-    
-    const deltaX = e.clientX - dragStart.x;
-    const deltaY = e.clientY - dragStart.y;
-    
-    // Track that we've moved beyond a small threshold
-    if (!hasMoved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
-      setHasMoved(true);
-    }
-    
-    const newPosition = {
-      x: Math.max(0, initialPosition.x + deltaX),
-      y: Math.max(0, initialPosition.y + deltaY)
-    };
-    
-    onUpdate(block.id, { position: newPosition });
-  }, [isDragging, hasMoved, dragStart, initialPosition, block.id, onUpdate]);
-
-  const handleMouseUp = useCallback((e: MouseEvent) => {
-    if (isDragging) {
-      setIsDragging(false);
-      
-      // If we didn't move much, treat it as a click
-      if (!hasMoved) {
-        onSelect(block);
-      }
-      
-      setHasMoved(false);
-      
-      // Remove global listeners
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    }
-  }, [isDragging, hasMoved, handleMouseMove, block, onSelect]);
-
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     
@@ -104,15 +106,10 @@ export function CanvasBlock({
     e.preventDefault();
     e.stopPropagation();
     
-    // Start dragging immediately - no delays or additional clicks needed
+    // Start dragging immediately
     setIsDragging(true);
-    setHasMoved(false);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    setInitialPosition({ x: block.position.x, y: block.position.y });
-    
-    // Add global listeners immediately for responsive dragging
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    initialPositionRef.current = { x: block.position.x, y: block.position.y };
   };
 
   const handleConnectionPointClick = (point: string, e: React.MouseEvent) => {
@@ -185,12 +182,16 @@ export function CanvasBlock({
 
   return (
     <div
+      ref={blockRef}
       className={`canvas-block absolute select-none ${
         isDragging ? 'z-50 dragging' : 'z-10'
       } ${isSelected ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
       style={{
         left: block.position.x,
-        top: block.position.y
+        top: block.position.y,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        userSelect: 'none',
+        touchAction: 'none'
       }}
       onMouseDown={handleMouseDown}
       onMouseEnter={() => setShowControls(true)}

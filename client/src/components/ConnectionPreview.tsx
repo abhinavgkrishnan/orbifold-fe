@@ -80,19 +80,41 @@ export function ConnectionPreview({ isConnecting, connectingFrom, blocks, mouseP
     path = `M ${sourcePos.x} ${sourcePos.y} L ${sourceExtend.x} ${sourceExtend.y} L ${targetX} ${sourceExtend.y} L ${targetX} ${targetY}`;
   }
 
+  // Helper to get the direction of the last segment of the preview path
+  const getLastSegmentDirection = (): 'right' | 'left' | 'up' | 'down' => {
+    const dx = targetX - sourcePos.x;
+    const dy = targetY - sourcePos.y;
+    const isHorizontalPrimary = Math.abs(dx) > Math.abs(dy);
+    let prev, end;
+    if (isHorizontalPrimary) {
+      // Path: M source -> sourceExtend -> sourceExtend.x, targetY -> target
+      prev = { x: sourceExtend.x, y: targetY };
+      end = { x: targetX, y: targetY };
+    } else {
+      // Path: M source -> sourceExtend -> targetX, sourceExtend.y -> target
+      prev = { x: targetX, y: sourceExtend.y };
+      end = { x: targetX, y: targetY };
+    }
+    if (end.x > prev.x) return 'right';
+    if (end.x < prev.x) return 'left';
+    if (end.y > prev.y) return 'down';
+    if (end.y < prev.y) return 'up';
+    return 'right';
+  };
+
   return (
     <svg className="absolute inset-0 pointer-events-none w-full h-full" style={{ zIndex: 15 }}>
       <defs>
         <marker
           id="preview-arrowhead"
           markerWidth="8"
-          markerHeight="6"
-          refX="7"
-          refY="3"
+          markerHeight="8"
+          refX="8"
+          refY="4"
           orient="auto"
           markerUnits="strokeWidth"
         >
-          <path d="M0,0 L0,6 L8,3 z" fill="#14B8A6" opacity="0.7" />
+          <path d="M0,0 L0,8 L8,4 Z" fill="#14B8A6" opacity="0.7" />
         </marker>
       </defs>
       <path
