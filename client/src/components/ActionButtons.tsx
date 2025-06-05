@@ -1,9 +1,7 @@
-import { Save, Download, CheckCircle } from 'lucide-react';
+import { Download, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { ProtocolData } from '@/lib/protocol-types';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
 
 interface ActionButtonsProps {
   protocolData: ProtocolData;
@@ -12,41 +10,6 @@ interface ActionButtonsProps {
 
 export function ActionButtons({ protocolData, onClearCanvas }: ActionButtonsProps) {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  const saveProtocol = useMutation({
-    mutationFn: async (data: ProtocolData) => {
-      const response = await apiRequest('POST', '/api/protocols', data);
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Protocol Saved",
-        description: "Your protocol has been saved successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/protocols'] });
-    },
-    onError: (error) => {
-      toast({
-        title: "Save Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-
-  const handleSave = () => {
-    if (protocolData.blocks.length === 0) {
-      toast({
-        title: "Nothing to Save",
-        description: "Add some blocks to your protocol before saving.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    saveProtocol.mutate(protocolData);
-  };
 
   const handleExport = () => {
     if (protocolData.blocks.length === 0) {
@@ -127,15 +90,6 @@ export function ActionButtons({ protocolData, onClearCanvas }: ActionButtonsProp
 
   return (
     <div className="fixed bottom-4 right-4 flex flex-col space-y-3">
-      <Button
-        onClick={handleSave}
-        disabled={saveProtocol.isPending}
-        className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg"
-      >
-        <Save className="w-4 h-4 mr-2" />
-        {saveProtocol.isPending ? 'Saving...' : 'Save'}
-      </Button>
-      
       <Button
         onClick={handleExport}
         variant="outline"
